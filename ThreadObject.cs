@@ -12,7 +12,6 @@ class ThreadObject
     private object _sleepLockObj = new object();
     private bool _isSleeping = false;
 
-    private object _terminationLockObj = new object();
     private bool _isTerminated = false;
 
     public readonly Stopwatch swSleep = new Stopwatch();

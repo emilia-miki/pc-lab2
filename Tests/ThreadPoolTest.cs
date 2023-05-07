@@ -1,7 +1,7 @@
 class ThreadPoolTest : ITest
 {
 	private const int threadCount = 6;
-	private const int maxTaskDuration = 1200;
+	private const int maxTaskDuration = 400;
 
 	private ThreadPool _threadPool = null!;
 
@@ -52,7 +52,7 @@ class ThreadPoolTest : ITest
 			_threadPool.AddTask(() => Task(result));
 		}
 
-		Thread.Sleep(threadCount * 100);
+		Thread.Sleep(maxTaskDuration / 5);
 		
 		foreach (var result in taskResults)
 		{
@@ -63,7 +63,7 @@ class ThreadPoolTest : ITest
 			}
 		}
 
-		Thread.Sleep(maxTaskDuration + threadCount * 10);
+		Thread.Sleep(6 * maxTaskDuration / 5);
 
 		foreach (var result in taskResults)
 		{
@@ -72,6 +72,85 @@ class ThreadPoolTest : ITest
 				throw new Exception(
 					"The tasks should have all been completed by now");
 			}
+		}
+	}
+
+	public void DiscardTasksWhenFull()
+	{
+		for (var i = 0; i < threadCount; i++)
+		{
+			_threadPool.AddTask(() => Thread.Sleep(200));
+		}
+
+		var completed = false;
+		_threadPool.AddTask(() => completed = true);
+
+		Thread.Sleep(300);
+
+		if (completed)
+		{
+			throw new Exception(
+				"New tasks should be discarded when the thread pool is full");
+		}
+	}
+
+	public void StateManagement()
+	{
+		_threadPool.Sleep();
+
+		var taskResults = new TaskResult[threadCount];
+		for (var i = 0; i < threadCount; i++)
+		{
+			taskResults[i] = new TaskResult();
+		}
+		
+		foreach (var result in taskResults)
+		{
+			_threadPool.AddTask(() => Task(result));
+		}
+		Thread.Sleep(50);
+
+		foreach (var result in taskResults)
+		{
+			if (result.Running || result.Completed)
+			{
+				throw new Exception(
+					"Tasks shouldn't start running when the thread pool is sleeping");
+			}
+		}
+
+		_threadPool.Resume();
+		Thread.Sleep(maxTaskDuration);
+
+		foreach (var result in taskResults)
+		{
+			if (result.Running || !result.Completed)
+			{
+				throw new Exception(
+					"Tasks should execute after resuming the thread pool");
+			}
+		}
+
+		var taskResult = new TaskResult();
+		_threadPool.AddTask(() => Task(taskResult));
+		Thread.Sleep(50);
+
+		_threadPool.Terminate();
+		Thread.Sleep(maxTaskDuration);
+
+		if (!taskResult.Completed)
+		{
+			throw new Exception(
+				"Tasks should execute when termination is requested");
+		}
+
+		var completed = false;
+		_threadPool.AddTask(() => completed = true);
+		Thread.Sleep(50);
+		if (completed)
+		{
+			throw new Exception(
+				"Thread pool should not execute new tasks after termination");
 		}
 	}
 }
