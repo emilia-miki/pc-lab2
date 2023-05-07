@@ -2,18 +2,13 @@ class ThreadObjectTest : ITest
 {
     private const int minimumSleepTime = 100;
 
-    private CountDown _countDown = null!;
-    private object _sleepLockObj = null!;
-
     private ThreadObject _threadObject = null!;
     private Thread _thread = null!;
 
     public void SetUp()
     {
-        _countDown = new CountDown(1);
-        _sleepLockObj = new object();
 
-        _threadObject = new ThreadObject(0, _countDown, _sleepLockObj);
+        _threadObject = new ThreadObject();
         _thread = new Thread(_threadObject.ThreadProc);
         _thread.Start();
     }
@@ -22,9 +17,9 @@ class ThreadObjectTest : ITest
     {
         _threadObject.Terminate();
         _thread.Join();
-        _threadObject.Dispose();
     }
 
+    // TODO: do everything with cancellation tokens and callbacks
     private bool CompleteTaskCheck()
     {
         var completed = false;
@@ -35,11 +30,11 @@ class ThreadObjectTest : ITest
 
     public void CompletesTasks()
     {
-            if (!CompleteTaskCheck())
-            {
-                throw new Exception(
-                    "ThreadObject should complete added tasks");
-            }
+        if (!CompleteTaskCheck())
+        {
+            throw new Exception(
+                "ThreadObject should complete added tasks");
+        }
     }
 
     public void DiscardsTasksWhenBusy()
@@ -85,10 +80,7 @@ class ThreadObjectTest : ITest
             }
         }
 
-        lock (_sleepLockObj)
-        {
-            Monitor.PulseAll(_sleepLockObj);
-        }
+        _threadObject.Resume();
 
         Thread.Sleep(minimumSleepTime);
         if (!CompleteTaskCheck())
@@ -108,10 +100,7 @@ class ThreadObjectTest : ITest
             throw new Exception("ThreadObject should not execute new tasks while sleeping");
         }
 
-        lock (_sleepLockObj)
-        {
-            Monitor.PulseAll(_sleepLockObj);
-        }
+        _threadObject.Resume();
         Thread.Sleep(minimumSleepTime);
 
         if (!CompleteTaskCheck())

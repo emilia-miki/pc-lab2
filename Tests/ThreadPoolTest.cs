@@ -12,7 +12,7 @@ class ThreadPoolTest : ITest
 
 	public void TearDown()
 	{
-		_threadPool.Dispose();
+		_threadPool.Terminate();
 	}
 
 	private class TaskResult

@@ -1,129 +1,142 @@
 using System.Diagnostics;
 
-class ThreadObject : IDisposable
+class ThreadObject
 {
+    private static int _currentId = 0;
+
     private int _id;
 
-    public Stopwatch? SwSleep { get; }
-    public Stopwatch? SwWait { get; }
-    public Stopwatch? SwWork { get; }
-    public Stopwatch? SwTermination { get; }
-    public int TaskCounter { get => _taskCounter; }
+    private object _taskLockObj = new object();
+    private ThreadStart? _task = null;
 
-    private TaskQueue _queue;
-    private int _taskCounter = 0;
+    private object _sleepLockObj = new object();
     private bool _isSleeping = false;
+
+    private object _terminationLockObj = new object();
     private bool _isTerminated = false;
-    private bool _isDisposed = false;
-    private ThreadStart _emptyTask = () => { };
 
-    private CountDown _countDown;
-    private object _sleepLockObj;
+    public readonly Stopwatch swSleep = new Stopwatch();
+    public readonly Stopwatch swWait = new Stopwatch();
+    public readonly Stopwatch swWork = new Stopwatch();
+    public readonly Stopwatch swTermination = new Stopwatch();
+    public int TaskCounter { get => _taskCounter; }
+    private int _taskCounter = 0;
 
-    public ThreadObject(int id, CountDown countDown, object sleepLockObj)
+    public ThreadObject()
     {
-        _id = id;
-
-        _countDown = countDown;
-        _sleepLockObj = sleepLockObj;
-
-        _queue = new TaskQueue(_id);
-
-        SwSleep = new Stopwatch();
-        SwWork = new Stopwatch();
-        SwTermination = new Stopwatch();
-        SwWait = new Stopwatch();
+        _id = _currentId;
+        _currentId += 1;
     }
 
     public void ThreadProc()
     {
-        if (_isDisposed)
-        {
-            throw new ObjectDisposedException("ThreadObject");
-        }
-
         while (!_isTerminated)
         {
             Debug.WriteLine($"Worker {_id}: getting a task");
-            SwWait?.Start();
-            var task = _queue.GetTask();
-            SwWait?.Stop();
-
-            if (task != _emptyTask)
+            swWait.Start();
+            lock (_taskLockObj)
             {
-                _taskCounter += 1;
-
-                Debug.WriteLine($"Worker {_id}: executing a task");
-                SwWork?.Start();
-                task();
-                SwWork?.Stop();
-            }
-            else
-            {
-                Debug.WriteLine($"Worker {_id}: received empty task");
-            }
-
-            SwSleep?.Start();
-            if (_isSleeping)
-            {
-                Debug.WriteLine($"Worker {_id}: sleeping");
-                lock (_sleepLockObj)
+                while (!_isTerminated && _task == null)
                 {
-                    Monitor.Wait(_sleepLockObj);
+                    Monitor.Wait(_taskLockObj);
                 }
-
-                Debug.WriteLine($"Worker {_id}: waking up");
-                _isSleeping = false;
             }
-            SwSleep?.Stop();
+            swWait.Stop();
 
-            Debug.WriteLine($"Worker {_id}: accepting new tasks");
-            _queue.AcceptTasks();
+            lock (_sleepLockObj)
+            {
+                if (!_isTerminated && _isSleeping)
+                {
+                    Debug.WriteLine($"Worker {_id}: sleeping");
+                    swSleep.Start();
+                    Monitor.Wait(_sleepLockObj);
+                    swSleep.Stop();
+                    Debug.WriteLine($"Worker {_id}: waking up");
+                }
+            }
+
+            if (_isTerminated)
+            {
+                break;
+            }
+
+            Debug.WriteLine($"Worker {_id}: executing a task");
+            swWork.Start();
+            _task!();
+            _task = null;
+            swWork.Stop();
+            _taskCounter += 1;
         }
 
-        _countDown.Signal();
-        SwTermination?.Stop();
-
+        swTermination.Stop();
         Debug.WriteLine($"Worker {_id}: thread terminated");
     }
 
     public bool AddTask(ThreadStart task)
     {
-        return _queue.AddTask(task);
+        if (_isTerminated)
+        {
+            throw new Exception("The thread has been terminated");
+        }
+
+        lock (_taskLockObj)
+        {
+            if (_task != null)
+            {
+                return false;
+            }
+
+            _task = task;
+
+            Monitor.Pulse(_taskLockObj);
+        }
+
+        return true;
     }
 
     public void Sleep()
     {
+        if (_isTerminated)
+        {
+            throw new Exception("The thread has been terminated");
+        }
+
         _isSleeping = true;
-        _queue.AddTask(_emptyTask);
+    }
+
+    public void Resume()
+    {
+        if (_isTerminated)
+        {
+            throw new Exception("The thread has been terminated");
+        }
+
+        lock (_sleepLockObj)
+        {
+            _isSleeping = false;
+            Monitor.Pulse(_sleepLockObj);
+        }
     }
 
     public void Terminate()
     {
-        if (_isDisposed)
-        {
-            throw new ObjectDisposedException("ThreadObject");
-        }
-
         if (_isTerminated)
         {
             return;
         }
 
+        swTermination.Start();
         _isTerminated = true;
 
-        SwTermination?.Start();
-        _queue.AddTask(_emptyTask);
-    }
-
-    public void Dispose()
-    {
-        if (_isDisposed)
+        lock (_taskLockObj)
         {
-            return;
+            Monitor.Pulse(_taskLockObj);
         }
 
-        _queue.Dispose();
-        _isDisposed = true;
+        lock (_sleepLockObj)
+        {
+            _isSleeping = false;
+            Monitor.Pulse(_sleepLockObj);
+        }
     }
 }

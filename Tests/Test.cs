@@ -1,5 +1,6 @@
 class Test
 {
+    // TODO: maybe don't use reflection somehow
     private readonly string[] excludedMethods = 
         { "ToString", "Equals", "GetType", "GetHashCode", "SetUp", "TearDown" };
 
@@ -11,6 +12,7 @@ class Test
         Console.WriteLine($"Test {test.GetType().Name} registered");
     }
 
+    // TODO: Collect success rate data and display as a table in the end
     public void Run()
     {
         Console.WriteLine("Running tests");

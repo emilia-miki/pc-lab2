@@ -1,14 +1,13 @@
-class ThreadPool : IDisposable
+class ThreadPool
 {
     private int _threadCount;
 
-    private ThreadObject[] _threadObjects;
-    private Thread[] _threads;
+    private object _lockObj = new object();
+
     private bool _isTerminated = false;
 
-    private object _lockObj = new object();
-    private object _sleepLockObj = new object();
-    private CountDown _countDown;
+    private ThreadObject[] _threadObjects;
+    private Thread[] _threads;
 
     private int _discardedTasks = 0;
     private int _totalTasks = 0;
@@ -18,12 +17,11 @@ class ThreadPool : IDisposable
         _threadCount = threadCount;
 
         _threadObjects = new ThreadObject[_threadCount];
-        _countDown = new CountDown(_threadCount);
         _threads = new Thread[threadCount];
         
         for (var i = 0; i < _threadCount; i++)
         {
-            _threadObjects[i] = new ThreadObject(i, _countDown, _sleepLockObj);
+            _threadObjects[i] = new ThreadObject();
             _threads[i] = new Thread(_threadObjects[i].ThreadProc);
             _threads[i].Start();
         }
@@ -57,22 +55,6 @@ class ThreadPool : IDisposable
         }
     }
 
-    public void Resume()
-    {
-        lock (_lockObj)
-        {
-            if (_isTerminated)
-            {
-                return;
-            }
-
-            lock (_sleepLockObj)
-            {
-                Monitor.PulseAll(_sleepLockObj);
-            }
-        }
-    }
-
     public void Sleep()
     {
         lock (_lockObj)
@@ -85,6 +67,22 @@ class ThreadPool : IDisposable
             foreach (var threadObject in _threadObjects)
             {
                 threadObject.Sleep();
+            }
+        }
+    }
+
+    public void Resume()
+    {
+        lock (_lockObj)
+        {
+            if (_isTerminated)
+            {
+                return;
+            }
+
+            foreach (var threadObject in _threadObjects)
+            {
+                threadObject.Resume();
             }
         }
     }
@@ -105,7 +103,10 @@ class ThreadPool : IDisposable
                 threadObject.Terminate();
             }
 
-            _countDown.Wait();
+            foreach (var thread in _threads)
+            {
+                thread.Join();
+            }
         }
 
         long meanWaitTime = 0;
@@ -115,10 +116,10 @@ class ThreadPool : IDisposable
 
         foreach (var threadObject in _threadObjects)
         {
-            meanWaitTime += threadObject.SwWait!.ElapsedMilliseconds;
-            meanSleepTime += threadObject.SwSleep!.ElapsedMilliseconds;
-            meanTerminationTime += threadObject.SwTermination!.ElapsedMilliseconds;
-            meanWorkTime += threadObject.SwWork!.ElapsedMilliseconds / threadObject.TaskCounter;
+            meanWaitTime += threadObject.swWait.ElapsedMilliseconds;
+            meanSleepTime += threadObject.swSleep.ElapsedMilliseconds;
+            meanWorkTime += threadObject.swWork.ElapsedMilliseconds / threadObject.TaskCounter;
+            meanTerminationTime += threadObject.swTermination.ElapsedMilliseconds;
         }
 
         meanWaitTime /= _threadCount;
@@ -127,26 +128,10 @@ class ThreadPool : IDisposable
         meanWorkTime /= _threadCount;
 
         Console.WriteLine("ThreadPool terminated.");
-        Console.WriteLine($"Mean wait time: {meanWaitTime}");
-        Console.WriteLine($"Mean sleep time: {meanSleepTime}");
-        Console.WriteLine($"Mean termination time: {meanTerminationTime}");
-        Console.WriteLine($"Mean work time: {meanWorkTime}");
-        Console.WriteLine($"Count of discarded tasks: {_discardedTasks}/{_totalTasks}");
-    }
-
-    public void Dispose()
-    {
-        lock (_lockObj)
-        {
-            if (!_isTerminated)
-            {
-                Terminate();
-            }
-
-            foreach (var threadObject in _threadObjects)
-            {
-                threadObject.Dispose();
-            }
-        }
+        Console.WriteLine($"Mean wait time: {meanWaitTime} ms");
+        Console.WriteLine($"Mean sleep time: {meanSleepTime} ms");
+        Console.WriteLine($"Mean termination time: {meanTerminationTime} ms");
+        Console.WriteLine($"Mean work time: {meanWorkTime} ms");
+        Console.WriteLine($"Count of discarded tasks: {_discardedTasks} out of {_totalTasks} total");
     }
 }
