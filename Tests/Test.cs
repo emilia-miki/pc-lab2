@@ -33,9 +33,10 @@ class Test
                     method.Invoke(test, null);
                     test.TearDown();
                 }
-                catch
+                catch (Exception e)
                 {
                     success = false;
+                    Debug.WriteLine(e.ToString());
                 }
 
                 testResult.Add(method.Name, success);

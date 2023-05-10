@@ -120,6 +120,27 @@ class ThreadPoolTest : ITest
 		}
 
 		_threadPool.Resume();
+		Thread.Sleep(50);
+
+		var discardedTaskResults = new List<TaskResult>();
+		for (var i = 0; i < threadCount * 2; i++)
+		{
+			var result = new TaskResult();
+			_threadPool.AddTask(() => Task(result));
+			discardedTaskResults.Add(result);
+		}
+
+		Thread.Sleep(50);
+
+		foreach (var result in discardedTaskResults)
+		{
+			if (result.Completed || result.Running)
+			{
+				throw new Exception(
+					"Tasks should be discarded when all threads are busy");
+			}
+		}
+
 		Thread.Sleep(maxTaskDuration);
 
 		foreach (var result in taskResults)
